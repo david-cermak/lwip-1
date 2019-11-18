@@ -121,6 +121,14 @@
 
 #endif /* DHCP_DEFINE_CUSTOM_TIMEOUTS */
 
+/** DHCP_DISCOVER_ADD_NETIF_HOSTNAME: Set to 1 to include hostname opt in discover packets.
+ * If the hostname is not set in the DISCOVER packet, then some servers might issue an OFFER with hostname
+ * configured and consequently reject the REQUEST with any other hostname.
+ */
+#ifndef DHCP_DISCOVER_ADD_NETIF_HOSTNAME
+#define DHCP_DISCOVER_ADD_NETIF_HOSTNAME 0
+#endif /* DHCP_DISCOVER_ADD_NETIF_HOSTNAME */
+
 /** DHCP_CREATE_RAND_XID: if this is set to 1, the xid is created using
  * LWIP_RAND() (this overrides DHCP_GLOBAL_XID)
  */
@@ -1036,6 +1044,10 @@ dhcp_discover(struct netif *netif)
 
     options_out_len = dhcp_option(options_out_len, msg_out->options, DHCP_OPTION_MAX_MSG_SIZE, DHCP_OPTION_MAX_MSG_SIZE_LEN);
     options_out_len = dhcp_option_short(options_out_len, msg_out->options, DHCP_MAX_MSG_LEN(netif));
+
+#if LWIP_NETIF_HOSTNAME && DHCP_DISCOVER_ADD_NETIF_HOSTNAME
+    options_out_len = dhcp_option_hostname(options_out_len, msg_out->options, netif);
+#endif /* LWIP NETIF HOSTNAME */
 
     options_out_len = dhcp_option(options_out_len, msg_out->options, DHCP_OPTION_PARAMETER_REQUEST_LIST, LWIP_ARRAYSIZE(dhcp_discover_request_options));
     for (i = 0; i < LWIP_ARRAYSIZE(dhcp_discover_request_options); i++) {
