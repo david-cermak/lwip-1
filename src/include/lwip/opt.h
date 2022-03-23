@@ -3184,6 +3184,50 @@
 #endif
 
 /**
+ * LWIP_HOOK_DHCP_SKIP_DISCOVER_AFTER_START(netif, result):
+ * Called from dhcp_start() after starting the service, just before sending the discovery packet
+ * Signature:\code{.c}
+ *   u8_t dhcp_skip_discovery_after_start(struct netif *netif, err_t *result);
+ * \endcode
+ * Arguments:
+ * - netif: struct netif that the packet will be sent through
+ * - result: pointer to the error code to be used to exit dhcp_start() if skipping discovery state
+ * Return values:
+ * - 0: (false) DHCP state machine should continue normally (not aborting discover stage)
+ * - != 0: (true) Hook has provided a valid IP address exits dhcp_start() without discovery stage
+ *          - need to set the dhcp state
+ *          - need to set the return value
+ *
+ * This enables embedded devices to claim their last bound address after restart and continue
+ * to request the previously bound IP.
+ *
+ * Example of this hook's implementation that allows the device to reclaim the persisted address
+ * (if it has one)
+ * Note, that has_bound_addr() and get_bound_addr() are platform/device specific API to indicate
+ * if the device had previously valid address and to retrieve the address (e.g. from a non-volatile storage)
+ *
+ * bool dhcp_skip_discovery_after_start(struct netif *netif, int8_t *result)
+ * {
+ *   if (has_bound_addr(netif)) {
+ *     struct dhcp *dhcp = netif_dhcp_data(netif);
+ *     if (!get_bound_addr(&dhcp->offered_ip_addr.addr)) {
+ *       return false;
+ *     }
+ *     dhcp->state = DHCP_STATE_BOUND;
+ *     dhcp->tries = 0;
+ *     dhcp->request_timeout = 0;
+ *     dhcp_network_changed(netif);
+ *     *result = ERR_OK;
+ *     return true;
+ *   }
+ *   return false;
+ * }
+ */
+#ifdef __DOXYGEN__
+#define LWIP_HOOK_DHCP_SKIP_DISCOVER_AFTER_START(netif, result)
+#endif
+
+/**
  * LWIP_HOOK_DHCP6_APPEND_OPTIONS(netif, dhcp6, state, msg, msg_type, options_len_ptr, max_len):
  * Called from various dhcp6 functions when sending a DHCP6 message.
  * This hook is called just before the DHCP6 message is sent, so the
