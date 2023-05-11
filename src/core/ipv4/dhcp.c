@@ -97,8 +97,7 @@
  * that the client requests from the servers (opt 55: DHCP_OPTION_PARAMETER_REQUEST_LIST)
  * If additional options are requested, define this macro as a comma separated list, with leading comma.
  * This macro is useful for example when requested vendor specific ids (VCI/VSI options), here is an example
- * of requesting the VSI option (option 43):
- *  #define DHCP_ADD_EXTRA_REQUEST_OPTIONS , 43
+ * of requesting the VSI option (option 43): DHCP_ADD_EXTRA_REQUEST_OPTIONS= ", 43"
  */
 #ifndef DHCP_ADD_EXTRA_REQUEST_OPTIONS
 #define DHCP_ADD_EXTRA_REQUEST_OPTIONS
