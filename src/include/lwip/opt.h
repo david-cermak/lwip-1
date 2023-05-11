@@ -1337,6 +1337,15 @@
 #define TCP_CALCULATE_EFF_SEND_MSS      1
 #endif
 
+/**
+ * LWIP_TCP_RTO_TIME: Initial TCP retransmission timeout (ms).
+ * This defaults to 3 seconds as traditionally defined in the TCP protocol.
+ * For improving timely recovery on faster networks, this value could
+ * be lowered down to 1 second (RFC 6298)
+ */
+#if !defined LWIP_TCP_RTO_TIME || defined __DOXYGEN__
+#define LWIP_TCP_RTO_TIME               3000
+#endif
 
 /**
  * TCP_SND_BUF: TCP sender buffer space (bytes).
@@ -3172,6 +3181,50 @@
  */
 #ifdef __DOXYGEN__
 #define LWIP_HOOK_DHCP_PARSE_OPTION(netif, dhcp, state, msg, msg_type, option, len, pbuf, offset)
+#endif
+
+/**
+ * LWIP_HOOK_DHCP_SKIP_DISCOVER_AFTER_START(netif, result):
+ * Called from dhcp_start() after starting the service, just before sending the discovery packet
+ * Signature:\code{.c}
+ *   u8_t dhcp_skip_discovery_after_start(struct netif *netif, err_t *result);
+ * \endcode
+ * Arguments:
+ * - netif: struct netif that the packet will be sent through
+ * - result: pointer to the error code to be used to exit dhcp_start() if skipping discovery state
+ * Return values:
+ * - 0: (false) DHCP state machine should continue normally (not aborting discover stage)
+ * - != 0: (true) Hook has provided a valid IP address exits dhcp_start() without discovery stage
+ *          - need to set the dhcp state
+ *          - need to set the return value
+ *
+ * This enables embedded devices to claim their last bound address after restart and continue
+ * to request the previously bound IP.
+ *
+ * Example of this hook's implementation that allows the device to reclaim the persisted address
+ * (if it has one)
+ * Note, that has_bound_addr() and get_bound_addr() are platform/device specific API to indicate
+ * if the device had previously valid address and to retrieve the address (e.g. from a non-volatile storage)
+ *
+ * bool dhcp_skip_discovery_after_start(struct netif *netif, int8_t *result)
+ * {
+ *   if (has_bound_addr(netif)) {
+ *     struct dhcp *dhcp = netif_dhcp_data(netif);
+ *     if (!get_bound_addr(&dhcp->offered_ip_addr.addr)) {
+ *       return false;
+ *     }
+ *     dhcp->state = DHCP_STATE_BOUND;
+ *     dhcp->tries = 0;
+ *     dhcp->request_timeout = 0;
+ *     dhcp_network_changed(netif);
+ *     *result = ERR_OK;
+ *     return true;
+ *   }
+ *   return false;
+ * }
+ */
+#ifdef __DOXYGEN__
+#define LWIP_HOOK_DHCP_SKIP_DISCOVER_AFTER_START(netif, result)
 #endif
 
 /**
