@@ -794,50 +794,43 @@ void dhcp_cleanup(struct netif *netif)
 
 /**
  * @ingroup dhcp4
- * Start DHCP negotiation for a network interface.
+ * Allocates DHCP struct (if not already attached to this netif),
+ * initializes it and sets up a DHCP PCB
  *
- * If no DHCP client instance was attached to this interface,
- * a new client is created first. If a DHCP client instance
- * was already present, it restarts negotiation.
- *
- * @param netif The lwIP network interface
- * @return lwIP error code
- * - ERR_OK - No error
- * - ERR_MEM - Out of memory
+ * @param netif the netif from which to remove the struct dhcp
  */
-err_t
-dhcp_start(struct netif *netif)
+static err_t
+dhcp_init(struct netif *netif)
 {
   struct dhcp *dhcp;
-  err_t result;
 
   LWIP_ASSERT_CORE_LOCKED();
   LWIP_ERROR("netif != NULL", (netif != NULL), return ERR_ARG;);
   LWIP_ERROR("netif is not up, old style port?", netif_is_up(netif), return ERR_ARG;);
   dhcp = netif_dhcp_data(netif);
-  LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_start(netif=%p) %c%c%"U16_F"\n", (void *)netif, netif->name[0], netif->name[1], (u16_t)netif->num));
+  LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_init(netif=%p) %c%c%"U16_F"\n", (void *)netif, netif->name[0], netif->name[1], (u16_t)netif->num));
 
   /* check MTU of the netif */
   if (netif->mtu < DHCP_MAX_MSG_LEN_MIN_REQUIRED) {
-    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_start(): Cannot use this netif with DHCP: MTU is too small\n"));
+    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_init(): Cannot use this netif with DHCP: MTU is too small\n"));
     return ERR_MEM;
   }
 
   /* no DHCP client attached yet? */
   if (dhcp == NULL) {
-    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_start(): mallocing new DHCP client\n"));
+    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_init(): mallocing new DHCP client\n"));
     dhcp = (struct dhcp *)mem_malloc(sizeof(struct dhcp));
     if (dhcp == NULL) {
-      LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_start(): could not allocate dhcp\n"));
+      LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_init(): could not allocate dhcp\n"));
       return ERR_MEM;
     }
 
     /* store this dhcp client in the netif */
     netif_set_client_data(netif, LWIP_NETIF_CLIENT_DATA_INDEX_DHCP, dhcp);
-    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_start(): allocated dhcp\n"));
+    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_init(): allocated dhcp\n"));
     /* already has DHCP client attached */
   } else {
-    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_start(): restarting DHCP configuration\n"));
+    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_init(): restarting DHCP configuration\n"));
 
     if (dhcp->pcb_allocated != 0) {
       dhcp_dec_pcb_refcount(); /* free DHCP PCB if not needed any more */
@@ -856,15 +849,44 @@ dhcp_start(struct netif *netif)
 #endif /* LWIP_DHCP_DOES_ACD_CHECK */
 
 
-  LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_start(): starting DHCP configuration\n"));
+  LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_init(): starting DHCP configuration\n"));
 
   if (dhcp_inc_pcb_refcount() != ERR_OK) { /* ensure DHCP PCB is allocated */
     return ERR_MEM;
   }
   dhcp->pcb_allocated = 1;
+  return ERR_OK;
+}
+
+/**
+ * @ingroup dhcp4
+ * Start DHCP negotiation for a network interface.
+ *
+ * If no DHCP client instance was attached to this interface,
+ * a new client is created first. If a DHCP client instance
+ * was already present, it restarts negotiation.
+ *
+ * @param netif The lwIP network interface
+ * @return lwIP error code
+ * - ERR_OK - No error
+ * - ERR_MEM - Out of memory
+ */
+err_t
+dhcp_start(struct netif *netif)
+{
+  struct dhcp *dhcp;
+  err_t result;
+
+  /* allocate and initialize DHCP structs */
+  result = dhcp_init(netif);
+  if (result != ERR_OK) {
+    return result;
+  }
+
+  dhcp = netif_dhcp_data(netif);
 
   if (!netif_is_link_up(netif)) {
-    /* set state INIT and wait for dhcp_network_changed() to call dhcp_discover() */
+    /* set state INIT and wait for dhcp_network_changed_link_up() to call dhcp_discover() */
     dhcp_set_state(dhcp, DHCP_STATE_INIT);
     return ERR_OK;
   }
@@ -877,6 +899,57 @@ dhcp_start(struct netif *netif)
     return ERR_MEM;
   }
   return result;
+}
+
+/**
+ * @ingroup dhcp4
+ * Tries to start DHCP negotiation with the provided (already bound) address
+ *
+ * This API works the same way as dhcp_start(), but moves directly to DHCP_STATE_BOUND
+ * state, skipping the DISCOVER phase.
+ * Typical usecase is for embedded devices that would try to claim their previously bound
+ * address after rebooting. Example of usage: \code{.c}
+ *   if (has_bound_addr(netif, &addr)) {
+ *     ret = dhcp_start_from_reboot(netif, &addr);
+ *   } else {
+ *     ret = dhcp_start(netif);
+ *   }
+ * \endcode
+ * where has_bound_addr() is a platform/device specific API indicating if the device had
+ * a previously valid address and if yes, retrieving the address (e.g. from non-volatile memory)
+ *
+ * @param netif The lwIP network interface
+ * @param old_addr  The address that was previously bound
+ * @return lwIP error code
+ * - ERR_OK - No error
+ * - ERR_MEM - Out of memory
+ */
+err_t
+dhcp_start_from_reboot(struct netif *netif, ip4_addr_t *old_addr)
+{
+  struct dhcp *dhcp;
+  err_t result;
+
+  /* allocate and initialize DHCP structs */
+  result = dhcp_init(netif);
+  if (result != ERR_OK) {
+    return result;
+  }
+
+  dhcp = netif_dhcp_data(netif);
+
+  if (!netif_is_link_up(netif)) {
+    /* set state INIT and wait for dhcp_network_changed_link_up() to call dhcp_discover() */
+    dhcp_set_state(dhcp, DHCP_STATE_INIT);
+    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_STATE, ("dhcp_start(): dhcp state is INIT\n"));
+    return ERR_OK;
+  }
+
+  /* restore the old address and continue in BOUND state */
+  dhcp->offered_ip_addr.addr = old_addr->addr;
+  dhcp_set_state(dhcp, DHCP_STATE_BOUND);
+  dhcp_network_changed_link_up(netif);
+  return ERR_OK;
 }
 
 /**
