@@ -69,6 +69,8 @@ struct lwip_sock {
   struct netconn *conn;
   /** data that was left from the previous read */
   union lwip_sock_lastdata lastdata;
+  sys_mutex_t lock;
+
 #if LWIP_SOCKET_SELECT || LWIP_SOCKET_POLL
   /** number of times data was received, set by event_callback(),
       tested by the receive and select functions */

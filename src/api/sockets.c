@@ -569,6 +569,12 @@ alloc_socket(struct netconn *newconn, int accepted)
       sockets[i].sendevent  = (NETCONNTYPE_GROUP(newconn->type) == NETCONN_TCP ? (accepted != 0) : 1);
       sockets[i].errevent   = 0;
 #endif /* LWIP_SOCKET_SELECT || LWIP_SOCKET_POLL */
+      if (!sockets[i].lock) {
+        /* one time init and never free */
+        if (sys_mutex_new(&sockets[i].lock) != ERR_OK) {
+          return -1;
+        }
+      }
       return i + LWIP_SOCKET_OFFSET;
     }
     SYS_ARCH_UNPROTECT(lev);
@@ -969,6 +975,7 @@ lwip_recv_tcp(struct lwip_sock *sock, void *mem, size_t len, int flags)
   if (flags & MSG_DONTWAIT) {
     apiflags |= NETCONN_DONTBLOCK;
   }
+  sys_mutex_lock(&sock->lock);
 
   do {
     struct pbuf *p;
@@ -987,6 +994,7 @@ lwip_recv_tcp(struct lwip_sock *sock, void *mem, size_t len, int flags)
                                   err, (void *)p));
 
       if (err != ERR_OK) {
+        sys_mutex_unlock(&sock->lock);
         if (recvd > 0) {
           /* already received data, return that (this trusts in getting the same error from
              netconn layer again next time netconn_recv is called) */
@@ -1048,6 +1056,8 @@ lwip_recv_tcp(struct lwip_sock *sock, void *mem, size_t len, int flags)
     apiflags |= NETCONN_DONTBLOCK | NETCONN_NOFIN;
     /* @todo: do we need to support peeking more than one pbuf? */
   } while ((recv_left > 0) && !(flags & MSG_PEEK));
+  sys_mutex_unlock(&sock->lock);
+
 lwip_recv_tcp_done:
   if ((recvd > 0) && !(flags & MSG_PEEK)) {
     /* ensure window update after copying all data */
