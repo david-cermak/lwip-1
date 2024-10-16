@@ -2,11 +2,27 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [fix/socket_read_lastdata_race]
   pull_request:
     branches: '*'
 
 jobs:
+  test_app:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install deps
+      run: sudo apt-get install check ninja-build doxygen
+    - name: Build the default example app
+      run: |
+        export LWIP_DIR=`pwd`
+        export LWIP_CONTRIB_DIR=`pwd`/contrib
+        cd test/apps
+        cmake . -B build
+        cd build
+        make -j 4
+        ./lwip_test_apps
+
   build:
     strategy:
       matrix:
