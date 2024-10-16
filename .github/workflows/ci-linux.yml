@@ -21,7 +21,7 @@ jobs:
         cmake . -B build
         cd build
         make -j 4
-        ./lwip_test_apps
+        for run in {1..100}; do echo RUN=$run; ./lwip_test_apps || exit 1 ; done
 
   build:
     strategy:

@@ -91,7 +91,7 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
                 -fsanitize=undefined
                 -fno-sanitize=alignment
                 -fstack-protector
-                -fstack-check
+#                -fstack-check
             )
             set(LWIP_SANITIZER_LIBS asan ubsan)
         endif()
