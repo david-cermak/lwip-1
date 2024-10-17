@@ -595,6 +595,18 @@ netconn_recv_data(struct netconn *conn, void **new_buf, u8_t apiflags)
   }
 
   NETCONN_MBOX_WAITING_INC(conn);
+  if (apiflags & NETCONN_PEEK) {
+#if LWIP_SO_RCVTIMEO
+      if (sys_arch_mbox_peek(&conn->recvmbox, conn->recv_timeout) == SYS_ARCH_TIMEOUT) {
+          NETCONN_MBOX_WAITING_DEC(conn);
+          return ERR_TIMEOUT;
+      }
+#else
+      sys_arch_mbox_fetch(&conn->recvmbox, &buf, 0);
+#endif /* LWIP_SO_RCVTIMEO*/
+      NETCONN_MBOX_WAITING_DEC(conn);
+      return ERR_OK;
+  }
   if (netconn_is_nonblocking(conn) || (apiflags & NETCONN_DONTBLOCK) ||
       (conn->flags & NETCONN_FLAG_MBOXCLOSED) || (conn->pending_err != ERR_OK)) {
     if (sys_arch_mbox_tryfetch(&conn->recvmbox, &buf) == SYS_MBOX_EMPTY) {
@@ -731,6 +743,12 @@ netconn_recv_data_tcp(struct netconn *conn, struct pbuf **new_buf, u8_t apiflags
     }
     return err;
   }
+  if (apiflags & NETCONN_PEEK) {
+      if (!(apiflags & NETCONN_NOAUTORCVD)) {
+          API_MSG_VAR_FREE(msg);
+      }
+      return err;
+  }
   buf = *new_buf;
   if (!(apiflags & NETCONN_NOAUTORCVD)) {
     /* Let the stack know that we have taken the data. */
@@ -795,6 +813,7 @@ netconn_recv_tcp_pbuf(struct netconn *conn, struct pbuf **new_buf)
  * @param new_buf pointer where a new pbuf is stored when received data
  * @param apiflags flags that control function behaviour. For now only:
  * - NETCONN_DONTBLOCK: only read data that is available now, don't wait for more data
+ * - NETCONN_PEEK: only check if the read data are available, but don't fetch from mbox
  * @return ERR_OK if data has been received, an error code otherwise (timeout,
  *                memory error or another error, @see netconn_recv_data)
  *         ERR_ARG if conn is not a TCP netconn

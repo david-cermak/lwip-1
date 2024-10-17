@@ -957,6 +957,7 @@ lwip_listen(int s, int backlog)
   return 0;
 }
 
+
 #if LWIP_TCP
 /* Helper function to loop over receiving pbufs from netconn
  * until "len" bytes are received or we're otherwise done.
@@ -975,7 +976,8 @@ lwip_recv_tcp(struct lwip_sock *sock, void *mem, size_t len, int flags)
   if (flags & MSG_DONTWAIT) {
     apiflags |= NETCONN_DONTBLOCK;
   }
-  sys_mutex_lock(&sock->lock);
+
+  SYS_ARCH_DECL_PROTECT(lev);
 
   do {
     struct pbuf *p;
@@ -983,18 +985,35 @@ lwip_recv_tcp(struct lwip_sock *sock, void *mem, size_t len, int flags)
     u16_t copylen;
 
     LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_recv_tcp: top while sock->lastdata=%p\n", (void *)sock->lastdata.pbuf));
-    /* Check if there is data left from the last recv operation. */
+
+    SYS_ARCH_PROTECT(lev);
+
     if (sock->lastdata.pbuf) {
       p = sock->lastdata.pbuf;
     } else {
       /* No data was left from the previous operation, so we try to get
          some from the network. */
-      err = netconn_recv_tcp_pbuf_flags(sock->conn, &p, apiflags);
+      u8_t lastdata_locked = 1;
+      err = ERR_OK;
+      if ((apiflags & NETCONN_DONTBLOCK) == 0) {
+        SYS_ARCH_UNPROTECT(lev);
+        lastdata_locked = 0;
+        err = netconn_recv_tcp_pbuf_flags(sock->conn, &p, NETCONN_PEEK | NETCONN_NOAUTORCVD);
+        if (err == ERR_OK) {
+          SYS_ARCH_PROTECT(lev);
+          lastdata_locked = 1;
+          err = netconn_recv_tcp_pbuf_flags(sock->conn, &p, apiflags | NETCONN_DONTBLOCK);
+        }
+      } else {
+        err = netconn_recv_tcp_pbuf_flags(sock->conn, &p, apiflags);
+      }
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_recv_tcp: netconn_recv err=%d, pbuf=%p\n",
                                   err, (void *)p));
 
       if (err != ERR_OK) {
-        sys_mutex_unlock(&sock->lock);
+        if (lastdata_locked) {
+            SYS_ARCH_UNPROTECT(lev);
+        }
         if (recvd > 0) {
           /* already received data, return that (this trusts in getting the same error from
              netconn layer again next time netconn_recv is called) */
@@ -1052,11 +1071,12 @@ lwip_recv_tcp(struct lwip_sock *sock, void *mem, size_t len, int flags)
         pbuf_free(p);
       }
     }
+    SYS_ARCH_UNPROTECT(lev);
+
     /* once we have some data to return, only add more if we don't need to wait */
     apiflags |= NETCONN_DONTBLOCK | NETCONN_NOFIN;
     /* @todo: do we need to support peeking more than one pbuf? */
   } while ((recv_left > 0) && !(flags & MSG_PEEK));
-  sys_mutex_unlock(&sock->lock);
 
 lwip_recv_tcp_done:
   if ((recvd > 0) && !(flags & MSG_PEEK)) {

@@ -367,6 +367,14 @@ u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg);
  * @param mbox mbox to delete
  */
 void sys_mbox_free(sys_mbox_t *mbox);
+/**
+ * @ingroup sys_mbox
+ * Peeks into an mbox to check if it contains any items, with a timeout.
+ * @param timeout Timeout in milliseconds to wait for an item
+ * @return 0 if an item is found, SYS_ARCH_TIMEOUT if the timeout expired
+ */
+u32_t sys_arch_mbox_peek(sys_mbox_t *mbox, u32_t timeout);
+
 #define sys_mbox_fetch(mbox, msg) sys_arch_mbox_fetch(mbox, msg, 0)
 #ifndef sys_mbox_valid
 /**

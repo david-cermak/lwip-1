@@ -65,6 +65,7 @@ extern "C" {
 #define NETCONN_DONTBLOCK   0x04
 #define NETCONN_NOAUTORCVD  0x08 /* prevent netconn_recv_data_tcp() from updating the tcp window - must be done manually via netconn_tcp_recvd() */
 #define NETCONN_NOFIN       0x10 /* upper layer already received data, leave FIN in queue until called again */
+#define NETCONN_PEEK        0x20 /* upper layer already received data, leave FIN in queue until called again */
 
 /* Flags for struct netconn.flags (u8_t) */
 /** This netconn had an error, don't block on recvmbox/acceptmbox any more */
